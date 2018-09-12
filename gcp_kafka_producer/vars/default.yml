@@ -1,0 +1,19 @@
+# default config
+
+# service_account of GCE (of the project)
+service_account_email: 669224596417-compute@developer.gserviceaccount.com
+
+# credential file name (will be placed in the credentials dir)
+credentials_file: SIT-env-49673bc79ab3.json
+
+# project ID to create machine(s)
+project_id: sit-env
+
+# zone
+zone: asia-east1-a
+
+# image name used to create machine(s)
+image: ubuntu-1604-xenial-v20180831
+
+# remote user of machine(s), compatible with ssh private key file in credentials dir
+user_account: shingyeong

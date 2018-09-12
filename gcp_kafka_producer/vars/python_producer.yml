@@ -1,0 +1,30 @@
+# config for python producer
+
+producer:
+  machine:
+    # machine typename (n1, f1, ...)
+    type_name: n1
+    # machine preference (standard, highcpu, ...)
+    preference: highcpu
+    # machine level (1, 2, 4, ...)
+    level: 2
+    # machine startup-script
+    on_startup: "apt-get update\\napt-get install -y python3-pip"
+    # instance name(s), seperated by ',' and MUST NOT have any whitespace
+    instance_names: prod-1,prod-2,prod-3
+
+  runtime:
+    # install packages before running scripts
+    pre_install: "pip3 install kafka-python"
+    # number to execute python at runtime
+    process: 4
+    # kafka_server IP, with default port
+    kafka_server: 35.229.236.24
+    # produce topic
+    kafka_topic: wafaccess
+    # timeunit in seconds
+    timeunit: 0.5
+    # total running times of <timeunit>
+    duration: 100
+    # messages sent per <timeunit>
+    messages: 150

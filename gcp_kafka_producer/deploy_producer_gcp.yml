@@ -1,0 +1,141 @@
+- name: Create GCP instance for python producer
+  hosts: localhost
+  strategy: free
+
+  vars_files:
+    - vars/default.yml
+    - vars/python_producer.yml
+
+  vars:
+    redential_dir: credentails # directory that places credentails
+    script_dir: running_scripts # directory that places scripts
+
+  tasks:
+    - name: Launch producer instances
+      gce:
+        zone: "{{ zone }}"
+        image: "{{ image }}"
+        service_account_email: "{{ service_account_email }}"
+        credentials_file: "./{{ credential_dir }}/{{ credentials_file }}"
+        project_id: "{{ project_id }}"
+        machine_type: "{{ producer.machine.type_name }}-{{ producer.machine.preference }}-{{ producer.machine.level }}"
+        instance_names: "{{ producer.machine.instance_names }}"
+        metadata : '{ "startup-script" : "{{ producer.machine.on_startup }}" }'
+      register: gce_instances
+
+- name: Check GCP instances config
+  hosts: localhost
+
+  vars_files:
+    - vars/default.yml
+    - vars/python_producer.yml
+
+  tasks:
+    - name: Save hosts
+      add_host:
+        hostname: "{{ item.public_ip }}"
+        groupname: gce_instances_ips
+      with_items: "{{ gce_instances.instance_data }}"
+
+    - name: Waiting for ssh port open
+      wait_for:
+        delay: 5
+        host: "{{ item.public_ip }}"
+        port: 22
+        state: started
+        timeout: 60
+      with_items: "{{ gce_instances.instance_data }}"
+
+    - name: Checking until ssh connection success
+      command: 'ssh -i ./{{ credential_dir }}/sit_private_key -o "StrictHostKeyChecking=no" {{ user_account }}@{{ item.public_ip }} ls /home'
+      register: cmd_res
+      retries: 5
+      until: cmd_res.stdout_lines
+      with_items: "{{ gce_instances.instance_data }}"
+
+    - debug:
+        msg: "Instance created OK"
+
+- name: Provisioning producer hosts
+  remote_user: shingyeong
+  hosts: gce_instances_ips
+
+  vars_files:
+    - vars/default.yml
+    - vars/python_producer.yml
+
+  vars:
+    ansible_ssh_private_key_file: "./{{ credential_dir }}/sit_private_key"
+
+  tasks:
+    - name: Copy producer file
+      hosts: gce_instances_ips
+      copy:
+        src: "./{{ script_dir }}/kafka_produce.py"
+        dest: "/home/{{ user_account }}/kafka_produce.py"
+        mode: 0755
+      become: yes
+      become_user: "{{ user_account }}"
+
+    - name: Copy background runner file
+      hosts: gce_instances_ips
+      copy:
+        src: "./{{ script_dir }}/run_script_background.sh"
+        dest: "/home/{{ user_account }}/run_script_background.sh"
+        mode: 0755
+      become: yes
+      become_user: "{{ user_account }}"
+
+    - name: Wait for pip3 installed
+      wait_for:
+        delay: 5
+        sleep: 5
+        timeout: 60
+        path: /usr/bin/pip3
+        state: present
+
+    - name: Install
+      command: "{{ producer.runtime.pre_install }}"
+      become: yes
+      become_user: "{{ user_account }}"
+
+    - name: Running Producer
+      shell: '/home/{{ user_account }}/run_script_background.sh
+              "python3 /home/{{ user_account }}/kafka_produce.py
+                        --host {{ producer.runtime.kafka_server }}
+                        --topic {{ producer.runtime.kafka_topic }}
+                        --thread {{ producer.machine.level * 2 }}
+                        --timeunit {{ producer.runtime.timeunit }}
+                        --duration {{ producer.runtime.duration }}
+                        --messages {{ producer.runtime.messages }} "
+              {{ producer.runtime.process }}'
+      become: yes
+      become_user: "{{ user_account }}"
+
+    - debug:
+        msg: "Send messages..."
+
+    - name: Waiting to finish
+      pause:
+        seconds: "{{ (producer.runtime.timeunit * producer.runtime.duration) | int }}"
+
+    - debug:
+        msg: "Finish"
+
+- name: Delete Producer GCP instances
+  hosts: localhost
+  strategy: free
+
+  vars_files:
+    - vars/default.yml
+    - vars/python_producer.yml
+
+  tasks:
+    - name: delete GCP instances
+      gce:
+        zone: "{{ zone }}"
+        service_account_email: "{{ service_account_email }}"
+        credentials_file: "./{{ credential_dir }}/{{ credentials_file }}"
+        project_id: "{{ project_id }}"
+        instance_names: "{{ producer.machine.instance_names }}"
+        state: absent
